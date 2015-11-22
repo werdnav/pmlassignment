@@ -1,0 +1,180 @@
+---
+title: "Practical Machine Learning Assignment"
+author: "Andrew"
+date: "22/11/2015"
+output: html_document
+---
+
+# Executive Summary
+
+The goal of your project is to predict the manner in which participants did exercise. The data for this assignment comes from the [Human Activity Recognition](http://groupware.les.inf.puc-rio.br/har) dataset. 
+
+# Analysis
+
+First we define helper functions to load additional packages (usePackage) and download/load CSV data (loadCSVData): 
+```{r}
+rm(list=ls())
+
+usePackage<-function(p){
+  # load a package if installed, else load after installation.
+  # Args:
+  #   p: package name in quotes
+  
+  if (!is.element(p, installed.packages()[,1])){
+    print(paste('Package:',p,'Not found, Installing Now...'))
+    install.packages(p, dep = TRUE)}
+  print(paste('Loading Package :',p))
+  require(p, character.only = TRUE)  
+}
+
+loadCSVData<-function(url){
+  # saves a data file to a temporary location and loads into memory.
+  # dir.create('tmp', showWarnings = FALSE)
+  file_name <- basename(url)
+  
+  if (file.exists(file_name)) {
+   print('Using local file.')
+} else {
+  print('Downloading file.')
+  download.file(url, file_name, method = "curl")
+}
+  file_data <- read.csv(file_name, na.strings = c("", "NA", "#DIV/0!"))
+  return(file_data)
+}
+
+```
+
+## Examining Dataset
+
+Using the helper function to download the test and training data from the url's provided: 
+```{r}
+train_url <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+test_url <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+
+train_data <- loadCSVData(train_url)
+test_data <- loadCSVData(test_url)
+```
+
+and examine the data set (verbose output surpressed) :
+
+```{r,echo=FALSE, results='hide',message=FALSE}
+head(train_data)
+summary(train_data$classe)
+summary(test_data)
+names(train_data)
+```
+
+We see the class varible in the training data contains 5 categories [A, B, C, D, E]. The objective of this analysis is to classify the test data into one of the five categories. We then clean up the data set, removing the columns that contain mostly N/A's: 
+
+```{r}
+
+
+
+# convert class to factor:
+train_data$classe <- as.factor(train_data$classe)
+test_data$classe <- NA
+levels(test_data$classe) <- levels(train_data$classe)
+
+# removing col with more than 90% N/A's: 
+na_count_limit <- 0.90
+
+na_per_col <- apply(train_data, 2, function(x) {sum(is.na(x))})
+train_data <- train_data[ , which(na_per_col <  nrow(train_data)*na_count_limit)]
+
+keep_col <- names(train_data)
+test_data <- test_data[, keep_col]
+
+# removing non relevant columns:
+train_data$X <- NULL
+train_data$user_name <- NULL
+train_data$cvtd_timestamp <- NULL
+train_data$new_window <- NULL
+train_data$num_window <- NULL
+train_data$raw_timestamp_part_1 <- NULL
+train_data$raw_timestamp_part_2 <- NULL
+
+test_data$X <- NULL 
+test_data$new_window <- NULL
+test_data$num_window <- NULL
+test_data$raw_timestamp_part_1 <- NULL
+test_data$raw_timestamp_part_2 <- NULL
+
+
+
+```
+
+## Fitting Model
+
+We divide the training data into two sets (training and validation). 
+
+```{r}
+usePackage('caret')
+set.seed(1)
+train_toggle <- createDataPartition(train_data$classe, p = 0.8, list = FALSE)
+training_set <- train_data[train_toggle, ]
+validation_set <- train_data[-train_toggle, ]
+```
+
+And fit a random forrest model: 
+
+```{r}
+usePackage('randomForest')
+set.seed(1)
+model_rf <- randomForest(classe ~ .,  data=training_set, ntrees = 100, na.action = na.omit)
+plot(model_rf, log="y")
+```
+
+## Examining Model Fit
+
+Examining the model fit to the training data (by fitting the training data):
+
+```{r}
+
+predict_train <- predict(model_rf, training_set, type = "class")
+confusionMatrix(predict_train, training_set$classe)
+```
+
+And examining the model fit using the validation data:
+
+```{r}
+predict_validation <- predict(model_rf, validation_set, type = "class")
+confusionMatrix(predict_validation, validation_set$classe)
+```
+
+Reading from the above output, the cross validation accuracy is 99.62% (corrresponding to an error of 0.38%).
+
+## Fitting Test Set
+
+Using the random forest model to classify the test data set: 
+
+```{r}
+test_class <- predict(model_rf, test_data)
+test_class
+```
+
+# Conclusions
+
+A random forest model was used to classify the test data by class. The model cross validation accuracy was 99.52% (an error of 0.38%) and the model predicts the class varible in the test data as follows: 
+
+ 1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+ 
+ B,  A,  B,  A,  A,  E,  D,  B,  A,  A,  B,  C,  B,  A,  E,  E,  A,  B,  B,  B, 
+
+# Submission
+
+Preparing files for submission: 
+
+```{r}
+answers <- as.vector(test_class)
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+
+```
+
